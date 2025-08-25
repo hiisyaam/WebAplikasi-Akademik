@@ -1,27 +1,65 @@
 <?php
+// Memulai sesi untuk proses login.
 session_start();
+// Menyertakan file koneksi database.
 include 'koneksi.php';
- 
+
+// ===== 1. PERLINDUNGAN HALAMAN =====
+// Jika pengguna SUDAH login (ada session 'username'),
+// langsung alihkan ke halaman utama (index.php). Mencegah user yang sudah
+// login untuk melihat halaman login lagi.
 if (isset($_SESSION['username'])) {
     header("Location: index.php");
     exit();
 }
- 
+
+
+// ===== 2. PROSES SUBMIT FORM LOGIN =====
+// Cek apakah form telah disubmit (tombol dengan name="tekan" ditekan).
 if (isset($_POST['tekan'])) {
-    $username = $_POST['username'];
-    $password = $_POST['password']; //Passwordnya gak di hash
- 
-    $sql = "SELECT * FROM users WHERE username='$username' AND password='$password'";
-    $result = mysqli_query($conn, $sql);
- 
+    // !!! PERINGATAN KEAMANAN #1: SQL INJECTION !!!
+    // Query ini sangat berbahaya. Penyerang bisa memasukkan kode SQL
+    // berbahaya ke dalam input username/password untuk merusak atau mencuri data.
+    // CONTOH SERANGAN: Jika penyerang memasukkan username: ' OR '1'='1
+    // Maka query akan menjadi:
+    // SELECT * FROM users WHERE username='' OR '1'='1' AND password='...'
+    // Ini akan selalu mengembalikan hasil (true) dan penyerang bisa login
+    // tanpa mengetahui password siapapun.
+    //
+    // SOLUSI: Gunakan Prepared Statements (mysqli_prepare, bind_param, execute).
+    $sql = "SELECT username, password FROM users WHERE username = ?";
+    $stmt = mysqli_prepare($conn, $sql);
+    mysqli_stmt_bind_param($stmt, "s", $_POST['username']);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+
+    // !!! PERINGATAN KEAMANAN #2: PLAIN TEXT PASSWORD !!!
+    // Anda menyimpan dan membandingkan password dalam bentuk teks biasa (tidak di-hash).
+    // Jika database Anda bocor, semua password pengguna akan terekspos.
+    //
+    // SOLUSI:
+    // - Saat registrasi: Simpan password menggunakan `password_hash($password, PASSWORD_DEFAULT);`
+    // - Saat login: Ambil hash dari DB berdasarkan username, lalu verifikasi dengan
+    //   `password_verify($password, $hash_dari_db);`
+
+    // Cek apakah query menemukan pengguna yang cocok.
+
     if ($result->num_rows > 0) {
+        // Jika berhasil, buat session dan alihkan ke dashboard.
         $row = mysqli_fetch_assoc($result);
-        $_SESSION['username'] = $row['username'];
-        header("Location: index.php");
-        exit();
-    } else {
-        echo "<script>alert('Email atau password Anda salah. Silakan coba lagi!')</script>";
+        $hashed_password = $row['password'];
+
+        // 2. Verifikasi password yang di-hash
+        if (password_verify($_POST['password'], $hashed_password)) {
+            // Password cocok, login berhasil
+            $_SESSION['username'] = $row['username'];
+            header("Location: index.php");
+            exit();
+        }
     }
+
+    // Jika gagal, tampilkan pesan error menggunakan JavaScript.
+    echo "<script>alert('Username atau password Anda salah!')</script>";
 }
 ?>
 
